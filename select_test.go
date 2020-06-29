@@ -1,6 +1,7 @@
 package elasticsql
 
 import (
+	"fmt"
 	"testing"
 
 	"encoding/json"
@@ -144,4 +145,9 @@ func TestBadSQL(t *testing.T) {
 			t.Error("can not be true, these cases are not supported!")
 		}
 	}
+}
+
+func Test1(t*testing.T)  {
+	convert, _, err := Convert("select * from Feature where SourceIdentify in (72834809,33252347,95593262,99274515,126339184,115064692,50439385,23238130,76635849,17457190,50954589,40400889,33170355,102958967,81860885,77066552,227903,27091994,102303598,77617154) and StartTime between 1593428423 and 1593432023 and SourceType = 0 order by StartTime desc")
+	fmt.Println(convert,err)
 }

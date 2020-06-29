@@ -29,10 +29,6 @@ func handleSelect(sel *sqlparser.Select) (dsl string, esType string, err error) 
 		queryMapStr = defaultQueryMapStr
 	}
 
-	//TODO support multiple tables
-	//for i, fromExpr := range sel.From {
-	//	fmt.Printf("the %d of from is %#v\n", i, sqlparser.String(fromExpr))
-	//}
 
 	//Handle from
 	if len(sel.From) != 1 {
@@ -41,7 +37,7 @@ func handleSelect(sel *sqlparser.Select) (dsl string, esType string, err error) 
 	esType = sqlparser.String(sel.From)
 	esType = strings.Replace(esType, "`", "", -1)
 
-	queryFrom, querySize := "0", "1"
+
 
 	aggFlag := false
 	// if the request is to aggregation
@@ -51,7 +47,6 @@ func handleSelect(sel *sqlparser.Select) (dsl string, esType string, err error) 
 	var aggStr string
 	if len(sel.GroupBy) > 0 || checkNeedAgg(sel.SelectExprs) {
 		aggFlag = true
-		querySize = "0"
 		aggStr, err = buildAggs(sel)
 		if err != nil {
 			//aggStr = ""
@@ -59,13 +54,7 @@ func handleSelect(sel *sqlparser.Select) (dsl string, esType string, err error) 
 		}
 	}
 
-	// Handle limit
-	if sel.Limit != nil {
-		if sel.Limit.Offset != nil {
-			queryFrom = sqlparser.String(sel.Limit.Offset)
-		}
-		querySize = sqlparser.String(sel.Limit.Rowcount)
-	}
+
 
 	// Handle order by
 	// when executating aggregations, order by is useless
@@ -79,8 +68,6 @@ func handleSelect(sel *sqlparser.Select) (dsl string, esType string, err error) 
 
 	var resultMap = map[string]interface{}{
 		"query": queryMapStr,
-		"from":  queryFrom,
-		"size":  querySize,
 	}
 
 	if len(aggStr) > 0 {
@@ -92,7 +79,7 @@ func handleSelect(sel *sqlparser.Select) (dsl string, esType string, err error) 
 	}
 
 	// keep the travesal in order, avoid unpredicted json
-	var keySlice = []string{"query", "from", "size", "sort", "aggregations"}
+	var keySlice = []string{"query",  "sort", "aggregations"}
 	var resultArr []string
 	for _, mapKey := range keySlice {
 		if val, ok := resultMap[mapKey]; ok {
