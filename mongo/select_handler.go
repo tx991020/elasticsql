@@ -1,6 +1,7 @@
 package mongo
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -15,6 +16,8 @@ func Convert(sql string) (dsl string, table string, err error) {
 	if err != nil {
 		return "", "", err
 	}
+	marshal, _ := json.Marshal(stmt)
+	fmt.Println(77, string(marshal))
 
 	//sql valid, start to handle
 	switch stmt.(type) {
@@ -36,6 +39,7 @@ func handleSelectWhere(expr *sqlparser.Expr, topLevel bool, parent *sqlparser.Ex
 	}
 
 	switch e := (*expr).(type) {
+
 	case *sqlparser.AndExpr:
 		return handleSelectWhereAndExpr(expr, topLevel, parent)
 
@@ -59,7 +63,8 @@ func handleSelectWhere(expr *sqlparser.Expr, topLevel bool, parent *sqlparser.Ex
 		colNameStr := sqlparser.String(colName)
 		fromStr := strings.Trim(sqlparser.String(rangeCond.From), `'`)
 		toStr := strings.Trim(sqlparser.String(rangeCond.To), `'`)
-		resultStr := fmt.Sprintf(`{"range" : {"%v" : {"from" : "%v", "to" : "%v"}}}`, colNameStr, fromStr, toStr)
+
+		resultStr := fmt.Sprintf(`{ $and : [{"%v" : { $gte : %v }}, {"%v" : { $lte : %v }}] }`, colNameStr, fromStr, colNameStr, toStr)
 
 		if topLevel {
 			//resultStr = fmt.Sprintf(`{"bool" : {"must" : [%v]}}`, resultStr)
@@ -132,6 +137,9 @@ func handleSelect(sel *sqlparser.Select) (dsl string, esType string, err error) 
 	var rootParent sqlparser.Expr
 	var defaultQueryMapStr = `{}`
 	var queryMapStr string
+	if sel.SelectExprs != nil {
+
+	}
 
 	// use may not pass where clauses
 	if sel.Where != nil {
@@ -140,17 +148,19 @@ func handleSelect(sel *sqlparser.Select) (dsl string, esType string, err error) 
 			return "", "", err
 		}
 	}
-	
+
 	if queryMapStr == "" {
 		queryMapStr = defaultQueryMapStr
 	}
 
 	//Handle from
 	if len(sel.From) != 1 {
-		return "", "", errors.New("mgo: multiple from currently not supported")
+		fmt.Println("yyy", sqlparser.String(sel.From))
+		return "", "", nil
 	}
 	esType = sqlparser.String(sel.From)
 	esType = strings.Replace(esType, "`", "", -1)
+	queryFrom, querySize := "0", "1"
 
 	aggFlag := false
 	// if the request is to aggregation
@@ -166,10 +176,24 @@ func handleSelect(sel *sqlparser.Select) (dsl string, esType string, err error) 
 			return "", "", err
 		}
 	}
+	if sel.Having != nil {
+
+	}
+
+
+	// Handle limit
+	if sel.Limit != nil {
+		if sel.Limit.Offset != nil {
+			queryFrom = sqlparser.String(sel.Limit.Offset)
+		}
+		querySize = sqlparser.String(sel.Limit.Rowcount)
+	}
+	fmt.Println("from,size", queryFrom, querySize)
 
 	// Handle order by
 	// when executating aggregations, order by is useless
-	var orderByArr []string
+	orderByArr := make([]string, 0)
+
 	if aggFlag == false {
 		for _, orderByExpr := range sel.OrderBy {
 			orderByStr := fmt.Sprintf(`{"%v": "%v"}`, strings.Replace(sqlparser.String(orderByExpr.Expr), "`", "", -1), orderByExpr.Direction)
@@ -180,7 +204,7 @@ func handleSelect(sel *sqlparser.Select) (dsl string, esType string, err error) 
 	var resultMap = map[string]interface{}{
 		"$match": queryMapStr,
 	}
-	fmt.Println(222,resultMap)
+	fmt.Println("query", queryMapStr)
 
 	if len(aggStr) > 0 {
 		resultMap["$group"] = aggStr
@@ -202,7 +226,6 @@ func handleSelect(sel *sqlparser.Select) (dsl string, esType string, err error) 
 	dsl = "{" + strings.Join(resultArr, ",") + "}"
 	return dsl, esType, nil
 }
-
 
 func handleSelectWhereOrExpr(expr *sqlparser.Expr, topLevel bool, parent *sqlparser.Expr) (string, error) {
 	orExpr := (*expr).(*sqlparser.OrExpr)
@@ -236,6 +259,7 @@ func handleSelectWhereOrExpr(expr *sqlparser.Expr, topLevel bool, parent *sqlpar
 }
 
 func handleSelectWhereAndExpr(expr *sqlparser.Expr, topLevel bool, parent *sqlparser.Expr) (string, error) {
+
 	andExpr := (*expr).(*sqlparser.AndExpr)
 	leftExpr := andExpr.Left
 	rightExpr := andExpr.Right
@@ -261,7 +285,8 @@ func handleSelectWhereAndExpr(expr *sqlparser.Expr, topLevel bool, parent *sqlpa
 	if _, ok := (*parent).(*sqlparser.AndExpr); ok {
 		return resultStr, nil
 	}
-	return resultStr, nil
+
+	return fmt.Sprintf(`{"$and" : [%v]}`, resultStr), nil
 }
 
 func handleSelectWhereComparisonExpr(expr *sqlparser.Expr, topLevel bool, parent *sqlparser.Expr) (string, error) {
@@ -305,7 +330,8 @@ func handleSelectWhereComparisonExpr(expr *sqlparser.Expr, topLevel bool, parent
 		rightStr = strings.Replace(rightStr, `'`, `"`, -1)
 		rightStr = strings.Trim(rightStr, "(")
 		rightStr = strings.Trim(rightStr, ")")
-		resultStr = fmt.Sprintf(`{  %v : { '$in' : %v } }`, colNameStr, rightStr)
+		fmt.Println("xxx in", colNameStr, rightStr)
+		resultStr = fmt.Sprintf(`{  %v : { '$in' : [%v] } }`, colNameStr, rightStr)
 	case "not in":
 		// the default valTuple is ('1', '2', '3') like
 		// so need to drop the () and replace ' to "
@@ -355,8 +381,8 @@ func buildComparisonExprRightStr(expr sqlparser.Expr) (string, bool, error) {
 			missingCheck = true
 			return "", missingCheck, nil
 		}
-
-		return "", missingCheck, errors.New("elasticsql: column name on the right side of compare operator is not supported")
+		fmt.Println("xxx", sqlparser.String(expr))
+		return "", missingCheck, nil
 	case sqlparser.ValTuple:
 		rightStr = sqlparser.String(expr)
 	default:
@@ -368,7 +394,6 @@ func buildComparisonExprRightStr(expr sqlparser.Expr) (string, bool, error) {
 func buildNestedFuncStrValue(nestedFunc *sqlparser.FuncExpr) (string, error) {
 	return "", errors.New("elasticsql: unsupported function" + nestedFunc.Name.String())
 }
-
 
 // if the where is empty, need to check whether to agg or not
 func checkNeedAgg(sqlSelect sqlparser.SelectExprs) bool {

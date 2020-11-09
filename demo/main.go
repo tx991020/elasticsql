@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -9,17 +10,24 @@ import (
 )
 
 func main() {
-	sql := `SELECT * from t  where age = 1 and nem ="haha"`
-	convert, table, err := mongo.Convert(sql)
+	sql := `select * from aaa
+where a=1 and x = '三个男人'
+and create_time between '2015-01-01T00:00:00+0800' and '2016-01-01T00:00:00+0800'
+and process_id > 1 order by id desc limit 100,10`
+	sql1 :=`select x.c1,y.c2,z.c3 from x, y, z where x.c1 = y.c1 and x.c1 = z.c1`
+	fmt.Println(sql,sql1)
+	convert, table, err := mongo.Convert(sql1)
+
 	if err != nil {
 		panic(err)
 		return
 	}
 	fmt.Println(convert,table)
+
 }
 
-func todo()  {
-	sql := `SELECT u.c1,u.c2,h.c2 FROM user.csv as u LEFT JOIN hist.csv as h ON(u.c1=h.c1)`
+func todo(sql string)  {
+
 	stmt, err := sqlparser.Parse(sql)
 	if err != nil {
 		panic(err)
@@ -33,8 +41,8 @@ func todo()  {
 }
 
 func handleSelect(sel *sqlparser.Select) (dsl string, esType string, err error) {
-
-	fmt.Println(len(sel.From))
+	marshal, _ := json.Marshal(sel)
+	fmt.Println(string(marshal))
 	esType = strings.Replace(esType, "`", "", -1)
 	return
 }

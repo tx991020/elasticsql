@@ -7,7 +7,7 @@ import (
 )
 
 func main() {
-	sql := `SELECT * from t  where age = 1 and nem ="haha"`
+	sql := `SELECT name from t`
 	convert, table, err := elasticsql.Convert(sql)
 	if err != nil {
 		panic(err)
