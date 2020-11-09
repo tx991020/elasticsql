@@ -130,7 +130,7 @@ func handleSelect(sel *sqlparser.Select) (dsl string, esType string, err error) 
 	// to tell the children this is root
 	// is there any better way?
 	var rootParent sqlparser.Expr
-	var defaultQueryMapStr = `{"bool" : {"must": [{"match_all" : {}}]}}`
+	var defaultQueryMapStr = `{}`
 	var queryMapStr string
 
 	// use may not pass where clauses
@@ -140,13 +140,14 @@ func handleSelect(sel *sqlparser.Select) (dsl string, esType string, err error) 
 			return "", "", err
 		}
 	}
+	
 	if queryMapStr == "" {
 		queryMapStr = defaultQueryMapStr
 	}
 
 	//Handle from
 	if len(sel.From) != 1 {
-		return "", "", errors.New("elasticsql: multiple from currently not supported")
+		return "", "", errors.New("mgo: multiple from currently not supported")
 	}
 	esType = sqlparser.String(sel.From)
 	esType = strings.Replace(esType, "`", "", -1)
@@ -177,19 +178,20 @@ func handleSelect(sel *sqlparser.Select) (dsl string, esType string, err error) 
 	}
 
 	var resultMap = map[string]interface{}{
-		"query": queryMapStr,
+		"$match": queryMapStr,
 	}
+	fmt.Println(222,resultMap)
 
 	if len(aggStr) > 0 {
-		resultMap["aggregations"] = aggStr
+		resultMap["$group"] = aggStr
 	}
 
 	if len(orderByArr) > 0 {
-		resultMap["sort"] = fmt.Sprintf("[%v]", strings.Join(orderByArr, ","))
+		resultMap["$sort"] = fmt.Sprintf("[%v]", strings.Join(orderByArr, ","))
 	}
 
 	// keep the travesal in order, avoid unpredicted json
-	var keySlice = []string{"query", "sort", "aggregations"}
+	var keySlice = []string{"$match", "sort", "aggregations"}
 	var resultArr []string
 	for _, mapKey := range keySlice {
 		if val, ok := resultMap[mapKey]; ok {
@@ -365,4 +367,22 @@ func buildComparisonExprRightStr(expr sqlparser.Expr) (string, bool, error) {
 
 func buildNestedFuncStrValue(nestedFunc *sqlparser.FuncExpr) (string, error) {
 	return "", errors.New("elasticsql: unsupported function" + nestedFunc.Name.String())
+}
+
+
+// if the where is empty, need to check whether to agg or not
+func checkNeedAgg(sqlSelect sqlparser.SelectExprs) bool {
+	for _, v := range sqlSelect {
+		expr, ok := v.(*sqlparser.AliasedExpr)
+		if !ok {
+			// no need to handle, star expression * just skip is ok
+			continue
+		}
+
+		//TODO more precise
+		if _, ok := expr.Expr.(*sqlparser.FuncExpr); ok {
+			return true
+		}
+	}
+	return false
 }
