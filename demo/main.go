@@ -14,7 +14,7 @@ func main() {
 //where a=1 and x = '三个男人'
 //and create_time between '2015-01-01T00:00:00+0800' and '2016-01-01T00:00:00+0800'
 //and process_id > 1 order by id desc limit 100,10`
-	sql1 :=`SELECT COUNT(*) FROM bank GROUP BY date`
+	sql1 :=`SELECT COUNT(*),min(age),a,b,c FROM student GROUP BY date, name`
 	//fmt.Println(sql,sql1)
 	convert, table, err := mongo.Convert(sql1)
 
@@ -22,7 +22,8 @@ func main() {
 		panic(err)
 		return
 	}
-	fmt.Println(convert,table)
+	fmt.Println(convert)
+	fmt.Println(table)
 
 }
 

@@ -138,7 +138,7 @@ func handleSelect(sel *sqlparser.Select) (dsl string, esType string, err error) 
 	var defaultQueryMapStr = `{}`
 	var queryMapStr string
 	if sel.SelectExprs != nil {
-
+		fmt.Println("from111", sqlparser.String(sel.SelectExprs))
 	}
 
 	// use may not pass where clauses
@@ -156,7 +156,7 @@ func handleSelect(sel *sqlparser.Select) (dsl string, esType string, err error) 
 
 	//Handle from
 	if len(sel.From) != 1 {
-		fmt.Println("from", sqlparser.String(sel.From))
+		fmt.Println("from111", sqlparser.String(sel.From))
 		return "", "", nil
 	}
 	esType = sqlparser.String(sel.From)
@@ -209,25 +209,29 @@ func handleSelect(sel *sqlparser.Select) (dsl string, esType string, err error) 
 		"$match": queryMapStr,
 	}
 	fmt.Println("query", queryMapStr)
+	fmt.Println("aggStr", aggStr)
 
-	if len(aggStr) > 0 {
-		resultMap["$group"] = aggStr
-	}
 
 	if len(orderByArr) > 0 {
 		resultMap["$sort"] = fmt.Sprintf("[%v]", strings.Join(orderByArr, ","))
 	}
 
 	// keep the travesal in order, avoid unpredicted json
-	var keySlice = []string{"$match", "sort", "aggregations"}
+	var keySlice = []string{"$match", "$sort", "$group"}
 	var resultArr []string
 	for _, mapKey := range keySlice {
 		if val, ok := resultMap[mapKey]; ok {
 			resultArr = append(resultArr, fmt.Sprintf(`"%v" : %v`, mapKey, val))
 		}
 	}
+	if len(aggStr) > 0 {
 
-	dsl = "{" + strings.Join(resultArr, ",") + "}"
+		dsl = "{" + strings.Join(resultArr, ",") + "}"
+		dsl = fmt.Sprintf(`db.%s.aggregate([{ "$group":%s },{ "$project": %s])`,,aggStr,sqlparser.String(sel.SelectExprs))
+	}else {
+		dsl = fmt.Sprintf(`db.table.find({"value": %s})`,resultMap)
+	}
+
 	return dsl, esType, nil
 }
 

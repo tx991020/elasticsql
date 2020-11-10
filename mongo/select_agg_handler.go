@@ -19,41 +19,18 @@ func handleFuncInSelectAgg(funcExprArr []*sqlparser.FuncExpr) msi {
 		//func expressions will use the same parent bucket
 
 		aggName := strings.ToUpper(v.Name.String()) + `(` + sqlparser.String(v.Exprs) + `)`
-		fmt.Println("group func",v.Name.String(),aggName)
+		fmt.Println("group func", v.Name.String(), aggName)
 		switch v.Name.Lowered() {
 
 		case "count":
 			//count need to distinguish * and normal field name
-			if sqlparser.String(v.Exprs) == "*" {
-				innerAggMap[aggName] = msi{
-					"value_count": msi{
-						"field": "_index",
-					},
-				}
-			} else {
-				// support count(distinct field)
-				if v.Distinct {
-					innerAggMap[aggName] = msi{
-						"cardinality": msi{
-							"field": sqlparser.String(v.Exprs),
-						},
-					}
-				} else {
-					innerAggMap[aggName] = msi{
-						"value_count": msi{
-							"field": sqlparser.String(v.Exprs),
-						},
-					}
-				}
-			}
+
+			innerAggMap["COUNT(*)"] = map[string]interface{}{"$sum": 1}
+
 		default:
 			// support min/avg/max/stats
 			// extended_stats/percentiles
-			innerAggMap[aggName] = msi{
-				v.Name.String(): msi{
-					"field": sqlparser.String(v.Exprs),
-				},
-			}
+			innerAggMap[aggName] = map[string]interface{}{fmt.Sprintf("$%s", v.Name.Lowered()): fmt.Sprintf("$%s", sqlparser.String(v.Exprs))}
 		}
 
 	}
@@ -62,19 +39,10 @@ func handleFuncInSelectAgg(funcExprArr []*sqlparser.FuncExpr) msi {
 
 }
 
-func handleGroupByColName(colName *sqlparser.ColName, index int, child msi) msi {
-	innerMap := make(msi)
+func handleGroupByColName(colName *sqlparser.ColName) string {
 
-	innerMap["_id"]=fmt.Sprintf("$%s",colName.Name.String())
-
-
-	if len(child) > 0 {
-		innerMap["$group"] = child
-	}
-	return msi{colName.Name.String(): innerMap}
+	return fmt.Sprintf("$%s", colName.Name.String())
 }
-
-
 
 func handleGroupByFuncExprRange(funcExpr *sqlparser.FuncExpr) (msi, error) {
 	if len(funcExpr.Exprs) < 3 {
@@ -190,21 +158,19 @@ func handleGroupByFuncExpr(funcExpr *sqlparser.FuncExpr, child msi) (msi, error)
 	return msi{stripedFuncExpr: innerMap}, nil
 }
 
-
-
 func handleGroupByAgg(groupBy sqlparser.GroupBy, innerMap msi) (msi, error) {
 
 	var aggMap = make(msi)
 
 	var child = innerMap
-
+	tem := make(map[string]interface{})
 	for i := len(groupBy) - 1; i >= 0; i-- {
 		v := groupBy[i]
 
 		switch item := v.(type) {
 		case *sqlparser.ColName:
-			currentMap := handleGroupByColName(item, i, child)
-			child = currentMap
+
+			tem[item.Name.String()] = handleGroupByColName(item)
 
 		case *sqlparser.FuncExpr:
 			currentMap, err := handleGroupByFuncExpr(item, child)
@@ -214,6 +180,10 @@ func handleGroupByAgg(groupBy sqlparser.GroupBy, innerMap msi) (msi, error) {
 			child = currentMap
 		}
 	}
+	if len(tem) > 0 {
+		child["_id"] = tem
+	}
+
 	aggMap = child
 
 	return aggMap, nil
@@ -223,7 +193,6 @@ func buildAggs(sel *sqlparser.Select) (string, error) {
 
 	funcExprArr, _, funcErr := extractFuncAndColFromSelect(sel.SelectExprs)
 	innerAggMap := handleFuncInSelectAgg(funcExprArr)
-
 	if funcErr != nil {
 	}
 
@@ -233,7 +202,7 @@ func buildAggs(sel *sqlparser.Select) (string, error) {
 	}
 
 	mapJSON, _ := json.Marshal(aggMap)
-	fmt.Println("agg func",string(mapJSON))
+	fmt.Println("agg func", string(mapJSON))
 	return string(mapJSON), nil
 }
 
@@ -267,4 +236,3 @@ func extractFuncAndColFromSelect(sqlSelect sqlparser.SelectExprs) ([]*sqlparser.
 	}
 	return funcArr, colArr, nil
 }
-
