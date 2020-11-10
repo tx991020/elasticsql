@@ -143,6 +143,7 @@ func handleSelect(sel *sqlparser.Select) (dsl string, esType string, err error) 
 
 	// use may not pass where clauses
 	if sel.Where != nil {
+		fmt.Println("where", sqlparser.String(sel.Where))
 		queryMapStr, err = handleSelectWhere(&sel.Where.Expr, true, &rootParent)
 		if err != nil {
 			return "", "", err
@@ -155,7 +156,7 @@ func handleSelect(sel *sqlparser.Select) (dsl string, esType string, err error) 
 
 	//Handle from
 	if len(sel.From) != 1 {
-		fmt.Println("yyy", sqlparser.String(sel.From))
+		fmt.Println("from", sqlparser.String(sel.From))
 		return "", "", nil
 	}
 	esType = sqlparser.String(sel.From)
@@ -169,20 +170,23 @@ func handleSelect(sel *sqlparser.Select) (dsl string, esType string, err error) 
 
 	var aggStr string
 	if len(sel.GroupBy) > 0 || checkNeedAgg(sel.SelectExprs) {
+		fmt.Println("group by", sqlparser.String(sel.GroupBy))
 		aggFlag = true
 		aggStr, err = buildAggs(sel)
 		if err != nil {
 			//aggStr = ""
+			fmt.Println("agg err",err)
 			return "", "", err
 		}
 	}
 	if sel.Having != nil {
-
+		fmt.Println("having", sqlparser.String(sel.Having))
 	}
 
 
 	// Handle limit
 	if sel.Limit != nil {
+		fmt.Println("limit", sqlparser.String(sel.Limit))
 		if sel.Limit.Offset != nil {
 			queryFrom = sqlparser.String(sel.Limit.Offset)
 		}
@@ -381,7 +385,7 @@ func buildComparisonExprRightStr(expr sqlparser.Expr) (string, bool, error) {
 			missingCheck = true
 			return "", missingCheck, nil
 		}
-		fmt.Println("xxx", sqlparser.String(expr))
+		fmt.Println("cloName", sqlparser.String(expr))
 		return "", missingCheck, nil
 	case sqlparser.ValTuple:
 		rightStr = sqlparser.String(expr)

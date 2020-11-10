@@ -3,6 +3,7 @@ package mongo
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/xwb1989/sqlparser"
@@ -18,7 +19,9 @@ func handleFuncInSelectAgg(funcExprArr []*sqlparser.FuncExpr) msi {
 		//func expressions will use the same parent bucket
 
 		aggName := strings.ToUpper(v.Name.String()) + `(` + sqlparser.String(v.Exprs) + `)`
+		fmt.Println("group func",v.Name.String(),aggName)
 		switch v.Name.Lowered() {
+
 		case "count":
 			//count need to distinguish * and normal field name
 			if sqlparser.String(v.Exprs) == "*" {
@@ -61,71 +64,17 @@ func handleFuncInSelectAgg(funcExprArr []*sqlparser.FuncExpr) msi {
 
 func handleGroupByColName(colName *sqlparser.ColName, index int, child msi) msi {
 	innerMap := make(msi)
-	if index == 0 {
-		innerMap["terms"] = msi{
-			"field": colName.Name.String(),
-			"size":  200, // this size may need to change ?
-		}
-	} else {
-		innerMap["terms"] = msi{
-			"field": colName.Name.String(),
-			"size":  0,
-		}
-	}
+
+	innerMap["_id"]=fmt.Sprintf("$%s",colName.Name.String())
+
 
 	if len(child) > 0 {
-		innerMap["aggregations"] = child
+		innerMap["$group"] = child
 	}
 	return msi{colName.Name.String(): innerMap}
 }
 
-func handleGroupByFuncExprDateHisto(funcExpr *sqlparser.FuncExpr) (msi, error) {
-	innerMap := make(msi)
-	var (
-		// default
-		field    = ""
-		interval = "1h"
-		format   = "yyyy-MM-dd HH:mm:ss"
-	)
 
-	//get field/interval and format
-	for _, expr := range funcExpr.Exprs {
-		// the expression in date_histogram must be like a = b format
-		switch item := expr.(type) {
-		case *sqlparser.AliasedExpr:
-			//nonStarExpr := expr.(*sqlparser.NonStarExpr)
-			comparisonExpr, ok := item.Expr.(*sqlparser.ComparisonExpr)
-
-			if !ok {
-				return nil, errors.New("elasticsql: unsupported expression in date_histogram")
-			}
-			left, ok := comparisonExpr.Left.(*sqlparser.ColName)
-			if !ok {
-				return nil, errors.New("elaticsql: param error in date_histogram")
-			}
-			rightStr := sqlparser.String(comparisonExpr.Right)
-			rightStr = strings.Replace(rightStr, `'`, ``, -1)
-			if left.Name.Lowered() == "field" {
-				field = rightStr
-			}
-			if left.Name.Lowered() == "value" || left.Name.Lowered() == "interval" {
-				interval = rightStr
-			}
-			if left.Name.Lowered() == "format" {
-				format = rightStr
-			}
-
-			innerMap["date_histogram"] = msi{
-				"field":    field,
-				"interval": interval,
-				"format":   format,
-			}
-		default:
-			return nil, errors.New("elasticsql: unsupported expression in date_histogram")
-		}
-	}
-	return innerMap, nil
-}
 
 func handleGroupByFuncExprRange(funcExpr *sqlparser.FuncExpr) (msi, error) {
 	if len(funcExpr.Exprs) < 3 {
@@ -218,8 +167,7 @@ func handleGroupByFuncExpr(funcExpr *sqlparser.FuncExpr, child msi) (msi, error)
 	var err error
 
 	switch funcExpr.Name.Lowered() {
-	case "date_histogram":
-		innerMap, err = handleGroupByFuncExprDateHisto(funcExpr)
+
 	case "range":
 		innerMap, err = handleGroupByFuncExprRange(funcExpr)
 	case "date_range":
@@ -241,6 +189,8 @@ func handleGroupByFuncExpr(funcExpr *sqlparser.FuncExpr, child msi) (msi, error)
 	stripedFuncExpr = strings.Replace(stripedFuncExpr, "'", "", -1)
 	return msi{stripedFuncExpr: innerMap}, nil
 }
+
+
 
 func handleGroupByAgg(groupBy sqlparser.GroupBy, innerMap msi) (msi, error) {
 
@@ -283,7 +233,7 @@ func buildAggs(sel *sqlparser.Select) (string, error) {
 	}
 
 	mapJSON, _ := json.Marshal(aggMap)
-
+	fmt.Println("agg func",string(mapJSON))
 	return string(mapJSON), nil
 }
 
