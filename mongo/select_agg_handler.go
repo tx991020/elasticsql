@@ -68,95 +68,8 @@ func handleGroupByFuncExprRange(funcExpr *sqlparser.FuncExpr) (msi, error) {
 	return innerMap, nil
 }
 
-func handleGroupByFuncExprDateRange(funcExpr *sqlparser.FuncExpr) (msi, error) {
-	var innerMap msi
-	var (
-		field        string
-		format       = "yyyy-MM-dd HH:mm:ss"
-		rangeList    = []string{}
-		rangeMapList = []msi{}
-	)
 
-	for _, expr := range funcExpr.Exprs {
-		nonStarExpr, ok := expr.(*sqlparser.AliasedExpr)
-		if !ok {
-			return nil, errors.New("elasticsql: unsupported star expression in function date_range")
-		}
 
-		switch item := nonStarExpr.Expr.(type) {
-		case *sqlparser.ComparisonExpr:
-			colName := sqlparser.String(item.Left)
-			equalVal := sqlparser.String(item.Right.(*sqlparser.SQLVal))
-			//fmt.Printf("%#v", sqlparser.String(item.Right))
-			equalVal = strings.Trim(equalVal, `'`)
-
-			switch colName {
-			case "field":
-				field = equalVal
-			case "format":
-				format = equalVal
-			default:
-				return nil, errors.New("elasticsql: unsupported column name " + colName)
-			}
-		case *sqlparser.SQLVal:
-			skippedString := strings.Trim(sqlparser.String(item), "`")
-			rangeList = append(rangeList, skippedString)
-		default:
-			return nil, errors.New("elasticsql: unsupported expression " + sqlparser.String(expr))
-		}
-	}
-
-	if len(field) == 0 {
-		return nil, errors.New("elasticsql: lack field of date_range")
-	}
-
-	for i := 0; i < len(rangeList)-1; i++ {
-		tmpMap := msi{
-			"from": strings.Trim(rangeList[i], `'`),
-			"to":   strings.Trim(rangeList[i+1], `'`),
-		}
-		rangeMapList = append(rangeMapList, tmpMap)
-	}
-
-	innerMap = msi{
-		"date_range": msi{
-			"field":  field,
-			"ranges": rangeMapList,
-			"format": format,
-		},
-	}
-
-	return innerMap, nil
-}
-
-func handleGroupByFuncExpr(funcExpr *sqlparser.FuncExpr, child msi) (msi, error) {
-
-	var innerMap msi
-	var err error
-
-	switch funcExpr.Name.Lowered() {
-
-	case "range":
-		innerMap, err = handleGroupByFuncExprRange(funcExpr)
-	case "date_range":
-		innerMap, err = handleGroupByFuncExprDateRange(funcExpr)
-	default:
-		return nil, errors.New("elasticsql: unsupported group by functions" + sqlparser.String(funcExpr))
-	}
-
-	if err != nil {
-		return nil, err
-	}
-
-	if len(child) > 0 && innerMap != nil {
-		innerMap["aggregations"] = child
-	}
-
-	stripedFuncExpr := sqlparser.String(funcExpr)
-	stripedFuncExpr = strings.Replace(stripedFuncExpr, " ", "", -1)
-	stripedFuncExpr = strings.Replace(stripedFuncExpr, "'", "", -1)
-	return msi{stripedFuncExpr: innerMap}, nil
-}
 
 func handleGroupByAgg(groupBy sqlparser.GroupBy, innerMap msi) (msi, error) {
 
@@ -173,11 +86,7 @@ func handleGroupByAgg(groupBy sqlparser.GroupBy, innerMap msi) (msi, error) {
 			tem[item.Name.String()] = handleGroupByColName(item)
 
 		case *sqlparser.FuncExpr:
-			currentMap, err := handleGroupByFuncExpr(item, child)
-			if err != nil {
-				return nil, err
-			}
-			child = currentMap
+
 		}
 	}
 	if len(tem) > 0 {
@@ -189,30 +98,33 @@ func handleGroupByAgg(groupBy sqlparser.GroupBy, innerMap msi) (msi, error) {
 	return aggMap, nil
 }
 
-func buildAggs(sel *sqlparser.Select) (string, error) {
+func buildAggs(sel *sqlparser.Select) (string, string,error) {
 
-	funcExprArr, _, funcErr := extractFuncAndColFromSelect(sel.SelectExprs)
+	funcExprArr, _, colMap,funcErr := extractFuncAndColFromSelect(sel.SelectExprs)
 	innerAggMap := handleFuncInSelectAgg(funcExprArr)
 	if funcErr != nil {
 	}
 
 	aggMap, err := handleGroupByAgg(sel.GroupBy, innerAggMap)
 	if err != nil {
-		return "", err
+		return "","", err
 	}
 
 	mapJSON, _ := json.Marshal(aggMap)
+	mapJSON1, _ := json.Marshal(colMap)
 	fmt.Println("agg func", string(mapJSON))
-	return string(mapJSON), nil
+	fmt.Println("cols", string(mapJSON))
+	return string(mapJSON),string(mapJSON1), nil
 }
 
 // extract func expressions from select exprs
-func extractFuncAndColFromSelect(sqlSelect sqlparser.SelectExprs) ([]*sqlparser.FuncExpr, []*sqlparser.ColName, error) {
+func extractFuncAndColFromSelect(sqlSelect sqlparser.SelectExprs) ([]*sqlparser.FuncExpr, []*sqlparser.ColName,map[string]interface{}, error) {
 	var colArr []*sqlparser.ColName
 	var funcArr []*sqlparser.FuncExpr
+	colMap :=make(map[string]interface{})
+	colMap["_id"]=0
 	for _, v := range sqlSelect {
-		// non star expressioin means column name
-		// or some aggregation functions
+
 		expr, ok := v.(*sqlparser.AliasedExpr)
 		if !ok {
 			// no need to handle, star expression * just skip is ok
@@ -223,16 +135,20 @@ func extractFuncAndColFromSelect(sqlSelect sqlparser.SelectExprs) ([]*sqlparser.
 		switch expr.Expr.(type) {
 		case *sqlparser.FuncExpr:
 			funcExpr := expr.Expr.(*sqlparser.FuncExpr)
+			aggName := strings.ToUpper(funcExpr.Name.String()) + `(` + sqlparser.String(funcExpr.Exprs) + `)`
+			colMap[aggName]=fmt.Sprintf("$%s",aggName)
 			funcArr = append(funcArr, funcExpr)
 
 		case *sqlparser.ColName:
-			continue
+			colExpr := expr.Expr.(*sqlparser.ColName)
+			colMap[colExpr.Name.String()]=fmt.Sprintf("$_id.%s",colExpr.Name.String())
+
 		default:
-			//ignore
+
 		}
 
-		//starExpression like *, table.* should be ignored
-		//'cause it is meaningless to set fields in elasticsearch aggs
 	}
-	return funcArr, colArr, nil
+	return funcArr, colArr,colMap, nil
 }
+
+
