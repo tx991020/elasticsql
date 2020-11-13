@@ -4,11 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 
 	"strings"
 
 	"github.com/tidwall/gjson"
-	"github.com/tx991020/utils"
 	"github.com/xwb1989/sqlparser"
 )
 
@@ -65,9 +65,9 @@ func handleSelectWhere(expr *sqlparser.Expr, topLevel bool, parent *sqlparser.Ex
 
 		colNameStr := sqlparser.String(colName)
 		fromStr := sqlparser.String(rangeCond.From)
-		fromStr =strings.ReplaceAll(fromStr,`'`,`"`)
+		fromStr = strings.ReplaceAll(fromStr, `'`, `"`)
 		toStr := sqlparser.String(rangeCond.To)
-		toStr =strings.ReplaceAll(toStr,`'`,`"`)
+		toStr = strings.ReplaceAll(toStr, `'`, `"`)
 
 		resultStr := fmt.Sprintf(`{ $and : [{"%v" : { "$gte" : %v }}, {"%v" : { "$lte" : %v }}] }`, colNameStr, fromStr, colNameStr, toStr)
 
@@ -231,7 +231,7 @@ func handleSelect(sel *sqlparser.Select) (dsl string, esType string, err error) 
 	} else {
 		fmt.Println("col", resultMap)
 
-		dsl = fmt.Sprintf(`db.%s.find(%v).sort(%v).skip(%s).limit(%s)`, table1, dsl,  string(marshal), queryFrom, querySize)
+		dsl = fmt.Sprintf(`db.%s.find(%v).sort(%v).skip(%s).limit(%s)`, table1, dsl, string(marshal), queryFrom, querySize)
 	}
 
 	return dsl, esType, nil
@@ -312,7 +312,6 @@ func handleSelectWhereComparisonExpr(expr *sqlparser.Expr, topLevel bool, parent
 	comparisonExpr := (*expr).(*sqlparser.ComparisonExpr)
 	colName, ok := comparisonExpr.Left.(*sqlparser.ColName)
 
-
 	if !ok {
 		return "", nil, errors.New(" invalid comparison expression, the left must be a column name")
 	}
@@ -333,12 +332,10 @@ func handleSelectWhereComparisonExpr(expr *sqlparser.Expr, topLevel bool, parent
 	case "<=":
 		resultStr = fmt.Sprintf(`{  %v : { "$lte" : %v } }`, colNameStr, rightStr)
 	case "=":
+		re := regexp.MustCompile(`^\d+$`)
+		matchString := re.MatchString(rightStr)
 
-		matchString, err := utils.MatchString(`^\d+$`, rightStr)
-		if err != nil {
-			fmt.Println(err)
-		}
-		if len(matchString) > 0 {
+		if matchString {
 			rightStr = fmt.Sprintf("NumberLong(%s)", rightStr)
 
 		}
